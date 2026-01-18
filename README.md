@@ -35,9 +35,10 @@
 
 ## Features
 
-- **Multi-Provider Support** - Choose between Claude Agent SDK and Opencode for different model options
+- **Multi-Provider Support** - Choose between Claude Agent SDK, Opencode, and Venice AI for different model options
 - **Claude Agent SDK Integration** - Full agentic capabilities with tool use and multi-turn conversations
 - **Opencode SDK Support** - Access multiple LLM providers (Claude, GPT-5, Grok, GLM, MiniMax, and more)
+- **Venice AI Integration** - Privacy-focused AI with uncensored models (Llama 3.3 70B and more)
 - **Composio Tool Router** - Access to 500+ external tools (Gmail, Slack, GitHub, Google Drive, and more)
 - **Persistent Chat Sessions** - Conversations maintain context across messages using SDK session management
 - **Multi-Chat Support** - Create and switch between multiple chat sessions
@@ -55,7 +56,7 @@
 |----------|------------|
 | **Desktop Framework** | Electron.js |
 | **Backend** | Node.js + Express |
-| **AI Providers** | Claude Agent SDK + Opencode SDK |
+| **AI Providers** | Claude Agent SDK + Opencode SDK + Venice AI |
 | **Tool Integration** | Composio Tool Router + MCP |
 | **Streaming** | Server-Sent Events (SSE) |
 | **Markdown** | Marked.js |
@@ -93,6 +94,8 @@ If you prefer manual setup, follow these steps:
   - Anthropic API key ([console.anthropic.com](https://console.anthropic.com))
 - **For Opencode Provider:**
   - Opencode API key ([opencode.dev](https://opencode.dev))
+- **For Venice Provider:**
+  - Venice API key ([venice.ai](https://venice.ai))
 - Composio API key ([app.composio.dev](https://app.composio.dev))
 
 #### 1. Clone the Repository
@@ -126,6 +129,9 @@ Edit `.env` with your API keys:
 # Claude Provider
 ANTHROPIC_API_KEY=your-anthropic-api-key
 
+# Venice Provider (optional)
+VENICE_API_KEY=your-venice-api-key
+
 # Opencode Provider (optional)
 OPENCODE_API_KEY=your-opencode-api-key
 OPENCODE_HOSTNAME=127.0.0.1
@@ -136,7 +142,7 @@ COMPOSIO_API_KEY=your-composio-api-key
 ```
 
 **Provider Selection:**
-- The app allows switching between **Claude** and **Opencode** providers in the UI
+- The app allows switching between **Claude**, **Venice**, and **Opencode** providers in the UI
 - Only configure the API key(s) for the provider(s) you want to use
 - Opencode can route to multiple model providers through a single SDK
 
@@ -227,6 +233,16 @@ The application supports multiple AI providers through a pluggable provider syst
 - Event-based streaming with real-time part updates
 - Session management per chat conversation
 - Extended thinking support (reasoning parts)
+
+#### Venice Provider
+- Privacy-focused AI platform with uncensored models
+- Available models:
+  - `llama-3.3-70b` - Meta's Llama 3.3 70B (default)
+  - `llama-3.1-405b` - Meta's Llama 3.1 405B
+  - And more models available on Venice AI
+- OpenAI-compatible API with streaming support
+- Message history-based session management
+- No content filtering or censorship
 
 **Streaming Implementation:**
 Both providers use Server-Sent Events (SSE) for streaming responses:
@@ -353,6 +369,8 @@ open-claude-cowork/
 
 - [Claude Agent SDK Documentation](https://docs.anthropic.com/en/docs/claude-agent-sdk)
 - [Opencode SDK Documentation](https://docs.opencode.dev)
+- [Venice AI Platform](https://venice.ai)
+- [Venice AI Documentation](https://docs.venice.ai)
 - [Composio Tool Router](https://docs.composio.dev/tool-router)
 - [Composio Dashboard](https://app.composio.dev)
 - [Electron Documentation](https://www.electronjs.org/docs)

@@ -1,10 +1,12 @@
 import { ClaudeProvider } from './claude-provider.js';
 import { OpencodeProvider } from './opencode-provider.js';
+import { VeniceProvider } from './venice-provider.js';
 
 // Provider registry
 const providers = {
   claude: ClaudeProvider,
-  opencode: OpencodeProvider
+  opencode: OpencodeProvider,
+  venice: VeniceProvider
 };
 
 // Provider instance cache
@@ -71,4 +73,5 @@ export async function clearProviderCache() {
 // Export classes for direct use
 export { ClaudeProvider } from './claude-provider.js';
 export { OpencodeProvider } from './opencode-provider.js';
+export { VeniceProvider } from './venice-provider.js';
 export { BaseProvider } from './base-provider.js';
