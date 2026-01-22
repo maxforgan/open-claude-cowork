@@ -1,5 +1,5 @@
 {
-  "name": "claude-agent-backend",
+  "name": "exa-list-generator-backend",
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",
@@ -10,9 +10,11 @@
   "dependencies": {
     "express": "^5.2.1",
     "@anthropic-ai/claude-agent-sdk": "^0.2.7",
-    "@composio/core": "latest",
     "@opencode-ai/sdk": "latest",
     "dotenv": "^16.4.5",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "exa-js": "^1.0.14",
+    "xlsx": "^0.18.5",
+    "airtable": "^0.12.2"
   }
 }

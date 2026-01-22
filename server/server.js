@@ -2,10 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
 import dotenv from 'dotenv';
-import { Composio } from '@composio/core';
-import { getProvider, getAvailableProviders } from './providers/index.js';
+import { ExaListProvider } from './providers/exa-list-provider.js';
+import { ExportService } from './providers/export-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,55 +14,29 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Initialize Composio
-const composio = new Composio();
+// Initialize services
+const listProvider = new ExaListProvider();
+const exportService = new ExportService();
 
-const composioSessions = new Map();
-
-// Write MCP config to opencode.json
-function updateOpencodeConfig(mcpUrl, mcpHeaders) {
-  const opencodeConfigPath = path.join(__dirname, 'opencode.json');
-  const config = {
-    mcp: {
-      composio: {
-        type: 'remote',
-        url: mcpUrl,
-        headers: mcpHeaders
-      }
-    }
-  };
-  fs.writeFileSync(opencodeConfigPath, JSON.stringify(config, null, 2));
-}
+// Store generated lists temporarily
+const generatedLists = new Map();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Chat endpoint using provider abstraction
+// Chat endpoint for list generation
 app.post('/api/chat', async (req, res) => {
   const {
     message,
     chatId,
-    userId = 'default-user',
-    provider: providerName = 'claude',  // Per-request provider selection
-    model = null  // Per-request model selection
   } = req.body;
 
   console.log('[CHAT] Request received:', message);
   console.log('[CHAT] Chat ID:', chatId);
-  console.log('[CHAT] Provider:', providerName);
-  console.log('[CHAT] Model:', model || '(default)');
 
   if (!message) {
     return res.status(400).json({ error: 'Message is required' });
-  }
-
-  // Validate provider
-  const availableProviders = getAvailableProviders();
-  if (!availableProviders.includes(providerName.toLowerCase())) {
-    return res.status(400).json({
-      error: `Invalid provider: ${providerName}. Available: ${availableProviders.join(', ')}`
-    });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -73,44 +46,21 @@ app.post('/api/chat', async (req, res) => {
   res.flushHeaders();
 
   try {
-    // Get or create Composio session for this user
-    let composioSession = composioSessions.get(userId);
-    if (!composioSession) {
-      console.log('[COMPOSIO] Creating new session for user:', userId);
-      composioSession = await composio.create(userId);
-      composioSessions.set(userId, composioSession);
-      console.log('[COMPOSIO] Session created with MCP URL:', composioSession.mcp.url);
-
-      // Update opencode.json with the MCP config
-      updateOpencodeConfig(composioSession.mcp.url, composioSession.mcp.headers);
-      console.log('[OPENCODE] Updated opencode.json with MCP config');
-    }
-
-    // Get the provider instance
-    const provider = getProvider(providerName);
-
-    // Build MCP servers config - passed to provider
-    const mcpServers = {
-      composio: {
-        type: 'http',
-        url: composioSession.mcp.url,
-        headers: composioSession.mcp.headers
-      }
-    };
-
-    console.log('[CHAT] Using provider:', provider.name);
-    console.log('[CHAT] All stored sessions:', Array.from(provider.sessions.entries()));
-
-    // Stream responses from the provider
-    for await (const chunk of provider.query({
+    // Stream responses from the Exa list provider
+    for await (const chunk of listProvider.query({
       prompt: message,
-      chatId,
-      userId,
-      mcpServers,
-      model,
-      allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TodoWrite'],
-      maxTurns: 20
+      chatId
     })) {
+      // If a list was generated, store it for export
+      if (chunk.type === 'list_generated') {
+        generatedLists.set(chatId, {
+          listType: chunk.listType,
+          columns: chunk.columns,
+          data: chunk.data,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       // Send chunk as SSE
       res.write(`data: ${JSON.stringify(chunk)}\n\n`);
     }
@@ -124,12 +74,129 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Get available providers endpoint
-app.get('/api/providers', (_req, res) => {
-  res.json({
-    providers: getAvailableProviders(),
-    default: 'claude'
-  });
+// Export to Excel endpoint
+app.post('/api/export/excel', (req, res) => {
+  const { chatId } = req.body;
+
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId is required' });
+  }
+
+  const listData = generatedLists.get(chatId);
+  if (!listData) {
+    return res.status(404).json({ error: 'No list found for this chat' });
+  }
+
+  try {
+    const buffer = exportService.exportToExcel(
+      listData.data,
+      listData.columns,
+      listData.listType
+    );
+
+    const filename = `${listData.listType.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (error) {
+    console.error('[EXPORT] Excel error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Export to CSV endpoint
+app.post('/api/export/csv', (req, res) => {
+  const { chatId } = req.body;
+
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId is required' });
+  }
+
+  const listData = generatedLists.get(chatId);
+  if (!listData) {
+    return res.status(404).json({ error: 'No list found for this chat' });
+  }
+
+  try {
+    const csv = exportService.exportToCSV(
+      listData.data,
+      listData.columns
+    );
+
+    const filename = `${listData.listType.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('[EXPORT] CSV error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Export to Airtable endpoint
+app.post('/api/export/airtable', async (req, res) => {
+  const { chatId, baseId } = req.body;
+
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId is required' });
+  }
+
+  if (!baseId) {
+    return res.status(400).json({ error: 'baseId is required' });
+  }
+
+  const listData = generatedLists.get(chatId);
+  if (!listData) {
+    return res.status(404).json({ error: 'No list found for this chat' });
+  }
+
+  try {
+    const result = await exportService.exportToAirtable(
+      listData.data,
+      listData.columns,
+      listData.listType,
+      baseId
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('[EXPORT] Airtable error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Export to Google Sheets endpoint
+app.post('/api/export/googlesheets', async (req, res) => {
+  const { chatId } = req.body;
+
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId is required' });
+  }
+
+  const listData = generatedLists.get(chatId);
+  if (!listData) {
+    return res.status(404).json({ error: 'No list found for this chat' });
+  }
+
+  try {
+    const result = await exportService.exportToGoogleSheets(
+      listData.data,
+      listData.columns,
+      listData.listType
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('[EXPORT] Google Sheets error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get available export formats
+app.get('/api/export/formats', (_req, res) => {
+  res.json(exportService.getAvailableFormats());
 });
 
 // Health check endpoint
@@ -137,17 +204,16 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    providers: getAvailableProviders()
+    provider: 'exa-list'
   });
 });
 
-// Start server and keep reference to prevent garbage collection
+// Start server
 const server = app.listen(PORT, () => {
-  console.log(`\n✓ Backend server running on http://localhost:${PORT}`);
+  console.log(`\n✓ Exa List Generator Backend running on http://localhost:${PORT}`);
   console.log(`✓ Chat endpoint: POST http://localhost:${PORT}/api/chat`);
-  console.log(`✓ Providers endpoint: GET http://localhost:${PORT}/api/providers`);
-  console.log(`✓ Health check: GET http://localhost:${PORT}/api/health`);
-  console.log(`✓ Available providers: ${getAvailableProviders().join(', ')}\n`);
+  console.log(`✓ Export formats: GET http://localhost:${PORT}/api/export/formats`);
+  console.log(`✓ Health check: GET http://localhost:${PORT}/api/health\n`);
 });
 
 // Keep the process alive
@@ -155,7 +221,7 @@ server.on('error', (err) => {
   console.error('Server error:', err);
 });
 
-// Prevent the process from exiting
+// Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down server...');
   server.close(() => {
